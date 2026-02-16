@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>给你的页面起个标题</title>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            /* 动态渐变背景 - 更快更明显 */
+            background: linear-gradient(45deg, #4a9fd8, #6ab0fe, #87CEEB, #b0e0ff, #3d8ec9, #a4d3ee);
+            background-size: 400% 400%;
+            animation: gradientBG 6s ease infinite;
+            font-family: "KaiTi", "楷体", cursive;
+            position: relative;
+            padding-top: 100px;
+            padding-left: 20px;
+            padding-right: 20px;
+            box-sizing: border-box;
+            text-align: center;
+            overflow-x: hidden;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* Three.js 画布 - 固定全屏，位于文字下层 */
+        #heartCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;  /* 点击穿透 */
+            z-index: 0;
+            display: none;          /* 初始隐藏 */
+        }
+
+        /* 文字卡片 */
+        .content {
+            position: relative;
+            z-index: 1;
+            font-size: 20px;
+            color: #2c3e50;
+            line-height: 2.2;
+            letter-spacing: 1.5px;
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.5);
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: rgba(255,255,255,0.25);
+            backdrop-filter: blur(2px);
+            border-radius: 20px;
+            display: flex;
+            gap: 20px;
+            word-break: break-word;
+        }
+
+        .left-column, .right-column {
+            flex: 1;
+            text-align: left;
+        }
+
+        .content > div > div {
+            margin-bottom: 0.2em;
+        }
+
+        @media (max-width: 600px) {
+            .content {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <audio id="bgMusic" autoplay loop muted>
+        <source src="dear d.mp3" type="audio/mpeg">
+        您的浏览器不支持音频播放。
+    </audio>
+
+    <!-- Three.js 画布 -->
+    <canvas id="heartCanvas"></canvas>
+
+    <!-- 初始提示语容器 -->
+    <div class="content" id="content">
+        <div style="text-align: center;">打开声音，点击屏幕任意位置，我们马上开始</div>
+    </div>
+
+    <!-- 引入 Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.128.0/build/three.module.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'https://unpkg.com/three@0.128.0/examples/jsm/controls/OrbitControls.js';
+
+        (function() {
+            // ---------- 音频和文字部分 ----------
+            var audio = document.getElementById('bgMusic');
+            var contentDiv = document.getElementById('content');
+            var canvas = document.getElementById('heartCanvas');
+
+            // ---------- 重新定义左右列数据（根据最新要求） ----------
+            // 左列：第一段全部 + 第二段前5行（直到“还是你。”）
+            const leftLines = [
+                "2025年我无比幸运能够与你在一起",
+                "是的，爱就这样显得“唐突”地开始",
+                "起初，我理性地觉得我们感情的终点在视线范围内",
+                "但你这一年对我的坦诚，",
+                "你的无话不说让我明白了我于你的重要性。",
+                "还有你的体贴，",
+                "你总是把让我舒服的事做在前面，",
+                "我就那样一次又一次爱上你。",
+                "我的生活充满着你的爱，",
+                "每次抚摸着你在我身边留下的痕迹，",
+                "想起你，",
+                "我变得无比幸福。",
+                // 第二段前5行
+                "假如生命重复一万次，",
+                "我还要在这个年纪遇到你，",
+                "爱上你。",
+                "再来，",
+                "还是你。"
+            ];
+
+            // 右列：第二段剩余行（从“所以现在”开始）+ 第三段全部 + 横线 + 好想你。
+            const rightLines = [
+                "所以现在，我不考虑终点",
+                "因为现在就是最好的，爱的进行时。",
+                "我们要当彼此最好的朋友，最能依靠的人。",
+                "我们要放肆爱，大胆爱，",
+                "爱得毫无保留。",
+                "你愿意跟我一起走到新的爱里面嘛！☺️ ",
+                "新年快乐，我的宝宝。",
+                "我相信你的爱，让这句话做我的最后的话。",
+                "—爱你的宝宝",
+                "————————————",      // 横线
+                "好想你。"
+            ];
+
+            // ---------- 构建时间队列 ----------
+            function buildDisplayQueue() {
+                const queue = [];
+                let delay = 0;
+
+                // 左列所有行
+                leftLines.forEach(line => {
+                    queue.push({ text: line, delay: delay, column: 'left' });
+                    delay += 2500; // 行间隔 2.5 秒
+                });
+
+                // 左列结束后，增加段间隔（4秒 = 左列最后一行后 +1500ms）
+                delay += 1500;
+
+                // 右列所有行
+                rightLines.forEach(line => {
+                    queue.push({ text: line, delay: delay, column: 'right' });
+                    delay += 2500;
+                });
+
+                return queue;
+            }
+
+            // ---------- Three.js 爱心 ----------
+            let scene, camera, renderer, points;
+            let particlePositions, targetPositions, initialPositions;
+            let heartAnimationId = null;
+            let startTime = null;
+            const animationDuration = 4000; // 4秒内完成拼合和渐显
+
+            function initHeart() {
+                // 创建场景
+                scene = new THREE.Scene();
+                
+                // 相机
+                camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+                camera.position.set(0, 2, 35); // 稍微抬高一点视角
+                camera.lookAt(0, 0, 0);
+                
+                // 渲染器
+                renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(window.devicePixelRatio);
+                renderer.setClearColor(0x000000, 0); // 透明背景
+
+                // 生成粒子数据 - 数量增加到500
+                const particleCount = 500;
+                const positions = new Float32Array(particleCount * 3);
+                const colors = new Float32Array(particleCount * 3);
+                
+                // 存储目标位置和初始位置
+                targetPositions = [];
+                initialPositions = [];
+
+                for (let i = 0; i < particleCount; i++) {
+                    // 心形参数 t 在 0 到 2PI 之间
+                    const t = (i / particleCount) * Math.PI * 2;
+                    // 心形公式：x = 16 sin^3 t, y = 13cos t - 5 cos 2t - 2 cos 3t - cos 4t
+                    const xBase = 16 * Math.pow(Math.sin(t), 3);
+                    const yBase = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+                    // 放大一点，并让爱心正立（心尖向下，即yBase直接使用，无需取反）
+                    const scale = 1.2;
+                    const tx = xBase * scale;
+                    const ty = yBase * scale; // 修正：去掉负号，心尖向下（y值小）
+                    const tz = (Math.random() - 0.5) * 8; // Z轴厚度增加到±8，更立体
+
+                    targetPositions.push(tx, ty, tz);
+
+                    // 初始位置：在目标位置周围随机大范围偏移，形成分散效果
+                    const ix = tx + (Math.random() - 0.5) * 20;
+                    const iy = ty + (Math.random() - 0.5) * 20;
+                    const iz = tz + (Math.random() - 0.5) * 15;
+                    initialPositions.push(ix, iy, iz);
+
+                    positions[i*3] = ix;
+                    positions[i*3+1] = iy;
+                    positions[i*3+2] = iz;
+
+                    // 随机粉红颜色 (R: 200-255, G: 150-220, B: 180-240)
+                    const r = 200 + Math.random() * 55;
+                    const g = 150 + Math.random() * 70;
+                    const b = 180 + Math.random() * 60;
+                    colors[i*3] = r / 255;
+                    colors[i*3+1] = g / 255;
+                    colors[i*3+2] = b / 255;
+                }
+
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+                // 材质：使用顶点颜色，开启透明，初始透明度0，点大小加大，AdditiveBlending增加光感
+                const material = new THREE.PointsMaterial({ 
+                    size: 0.6,
+                    vertexColors: true,
+                    transparent: true,
+                    opacity: 0,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                    sizeAttenuation: true // 根据距离调整大小，增强立体感
+                });
+
+                points = new THREE.Points(geometry, material);
+                scene.add(points);
+
+                // 添加柔和的环境光
+                const ambientLight = new THREE.AmbientLight(0x404060);
+                scene.add(ambientLight);
+
+                // 记录开始时间
+                startTime = performance.now();
+
+                // 启动动画循环
+                animateHeart();
+            }
+
+            function animateHeart() {
+                if (!points || !scene || !camera || !renderer) return;
+
+                const now = performance.now();
+                const elapsed = now - startTime;
+                let progress = Math.min(elapsed / animationDuration, 1); // 0 → 1
+
+                // 更新粒子位置：线性插值 between initialPositions and targetPositions
+                const positions = points.geometry.attributes.position.array;
+                for (let i = 0; i < positions.length; i += 3) {
+                    positions[i] = initialPositions[i] * (1 - progress) + targetPositions[i] * progress;
+                    positions[i+1] = initialPositions[i+1] * (1 - progress) + targetPositions[i+1] * progress;
+                    positions[i+2] = initialPositions[i+2] * (1 - progress) + targetPositions[i+2] * progress;
+                }
+                points.geometry.attributes.position.needsUpdate = true;
+
+                // 更新透明度
+                points.material.opacity = progress;
+
+                // 整体缩放：从0.3到1
+                const scale = 0.3 + progress * 0.7;
+                points.scale.set(scale, scale, scale);
+
+                // 缓慢旋转（始终旋转）
+                points.rotation.y += 0.003;
+                points.rotation.x += 0.001; // 轻微X轴旋转，增加动态
+
+                renderer.render(scene, camera);
+
+                heartAnimationId = requestAnimationFrame(animateHeart);
+            }
+
+            function showHeart() {
+                if (!canvas || heartAnimationId) return; // 已经显示
+                canvas.style.display = 'block';
+                // 调整画布尺寸
+                function resizeCanvas() {
+                    if (renderer) {
+                        renderer.setSize(window.innerWidth, window.innerHeight);
+                        camera.aspect = window.innerWidth / window.innerHeight;
+                        camera.updateProjectionMatrix();
+                    }
+                }
+                window.addEventListener('resize', resizeCanvas);
+                resizeCanvas();
+
+                initHeart();
+            }
+
+            // ---------- 开始逐行显示 ----------
+            function startShowing() {
+                contentDiv.innerHTML = ''; // 清空提示语
+
+                // 创建左右列容器
+                const leftCol = document.createElement('div');
+                leftCol.className = 'left-column';
+                const rightCol = document.createElement('div');
+                rightCol.className = 'right-column';
+                contentDiv.appendChild(leftCol);
+                contentDiv.appendChild(rightCol);
+
+                const queue = buildDisplayQueue();
+                const lastIndex = queue.length - 1;
+
+                queue.forEach((item, index) => {
+                    setTimeout(() => {
+                        const lineDiv = document.createElement('div');
+                        lineDiv.textContent = item.text;
+                        if (item.column === 'left') {
+                            leftCol.appendChild(lineDiv);
+                        } else {
+                            rightCol.appendChild(lineDiv);
+                        }
+                        // 自动滚动到新行
+                        lineDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+                        // 如果是最后一行（“好想你。”），则在其出现后 3 秒显示爱心
+                        if (index === lastIndex) {
+                            setTimeout(() => {
+                                showHeart();
+                            }, 3000); // 3秒后出现爱心
+                        }
+                    }, item.delay);
+                });
+            }
+
+            // ---------- 点击触发 ----------
+            function handleFirstClick() {
+                audio.muted = false;
+                audio.play().catch(e => console.log('播放失败:', e));
+                startShowing();
+                document.body.removeEventListener('click', handleFirstClick);
+                document.body.removeEventListener('touchstart', handleFirstClick);
+            }
+
+            document.body.addEventListener('click', handleFirstClick);
+            document.body.addEventListener('touchstart', handleFirstClick);
+        })();
+    </script>
+</body>
+</html>
